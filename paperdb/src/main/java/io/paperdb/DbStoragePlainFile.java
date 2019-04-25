@@ -36,6 +36,7 @@ public class DbStoragePlainFile implements Storage {
 
     private final Context mContext;
     private final String mDbName;
+    private final PaperConfig mConfig;
     private final HashMap<Class, Serializer> mCustomSerializers;
     private String mFilesDir;
     private boolean mPaperDirIsCreated;
@@ -65,10 +66,10 @@ public class DbStoragePlainFile implements Storage {
         SynchronizedCollectionsSerializer.registerSerializers(kryo);
         // Serialize inner AbstractList$SubAbstractListRandomAccess
         kryo.addDefaultSerializer(new ArrayList<>().subList(0, 0).getClass(),
-                new NoArgCollectionSerializer());
+            new NoArgCollectionSerializer());
         // Serialize AbstractList$SubAbstractList
         kryo.addDefaultSerializer(new LinkedList<>().subList(0, 0).getClass(),
-                new NoArgCollectionSerializer());
+            new NoArgCollectionSerializer());
         // To keep backward compatibility don't change the order of serializers above
 
         // UUID support
@@ -78,15 +79,16 @@ public class DbStoragePlainFile implements Storage {
             kryo.register(clazz, mCustomSerializers.get(clazz));
 
         kryo.setInstantiatorStrategy(
-                new Kryo.DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
+            new Kryo.DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
 
         return kryo;
     }
 
-    public DbStoragePlainFile(Context context, String dbName,
-                              HashMap<Class, Serializer> serializers) {
+    public DbStoragePlainFile(Context context, String dbName, PaperConfig config,
+        HashMap<Class, Serializer> serializers) {
         mContext = context;
         mDbName = dbName;
+        mConfig = config;
         mCustomSerializers = serializers;
     }
 
@@ -94,7 +96,7 @@ public class DbStoragePlainFile implements Storage {
     public synchronized void destroy() {
         assertInit();
 
-        final String dbPath = getDbPath(mContext, mDbName);
+        final String dbPath = getDbPath(mContext, mConfig, mDbName);
         if (!deleteDirectory(dbPath)) {
             Log.e(TAG, "Couldn't delete Paper dir " + dbPath);
         }
@@ -115,7 +117,7 @@ public class DbStoragePlainFile implements Storage {
             if (!backupFile.exists()) {
                 if (!originalFile.renameTo(backupFile)) {
                     throw new PaperDbException("Couldn't rename file " + originalFile
-                            + " to backup file " + backupFile);
+                        + " to backup file " + backupFile);
                 }
             } else {
                 //Backup exist -> original file is broken and must be deleted
@@ -192,7 +194,7 @@ public class DbStoragePlainFile implements Storage {
         boolean deleted = originalFile.delete();
         if (!deleted) {
             throw new PaperDbException("Couldn't delete file " + originalFile
-                    + " for table " + key);
+                + " for table " + key);
         }
     }
 
@@ -217,7 +219,7 @@ public class DbStoragePlainFile implements Storage {
      * @param backupFile   backup file to be used if write is failed
      */
     private <E> void writeTableFile(String key, PaperTable<E> paperTable,
-                                    File originalFile, File backupFile) {
+        File originalFile, File backupFile) {
         try {
             FileOutputStream fileStream = new FileOutputStream(originalFile);
 
@@ -236,11 +238,11 @@ public class DbStoragePlainFile implements Storage {
             if (originalFile.exists()) {
                 if (!originalFile.delete()) {
                     throw new PaperDbException("Couldn't clean up partially-written file "
-                            + originalFile, e);
+                        + originalFile, e);
                 }
             }
             throw new PaperDbException("Couldn't save table: " + key + ". " +
-                    "Backed up table will be used on next read attempt", e);
+                "Backed up table will be used on next read attempt", e);
         }
     }
 
@@ -249,7 +251,7 @@ public class DbStoragePlainFile implements Storage {
     }
 
     private <E> E readTableFile(String key, File originalFile,
-                                boolean v1CompatibilityMode) {
+        boolean v1CompatibilityMode) {
         try {
             final Input i = new Input(new FileInputStream(originalFile));
             final Kryo kryo = getKryo();
@@ -273,17 +275,21 @@ public class DbStoragePlainFile implements Storage {
             if (originalFile.exists()) {
                 if (!originalFile.delete()) {
                     throw new PaperDbException("Couldn't clean up broken/unserializable file "
-                            + originalFile, e);
+                        + originalFile, e);
                 }
             }
             String errorMessage = "Couldn't read/deserialize file "
-                    + originalFile + " for table " + key;
+                + originalFile + " for table " + key;
             throw new PaperDbException(errorMessage, e);
         }
     }
 
-    private String getDbPath(Context context, String dbName) {
-        return context.getFilesDir() + File.separator + dbName;
+    private String getDbPath(Context context, PaperConfig config, String dbName) {
+        File base = context.getFilesDir();
+        if (config.getStorageLocation() != null) {
+            base = new File(config.getStorageLocation());
+        }
+        return base.getAbsolutePath() + File.separator + dbName;
     }
 
     private void assertInit() {
@@ -294,7 +300,7 @@ public class DbStoragePlainFile implements Storage {
     }
 
     private void createPaperDir() {
-        mFilesDir = getDbPath(mContext, mDbName);
+        mFilesDir = getDbPath(mContext, mConfig, mDbName);
         if (!new File(mFilesDir).exists()) {
             boolean isReady = new File(mFilesDir).mkdirs();
             if (!isReady) {

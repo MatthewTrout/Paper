@@ -6,6 +6,7 @@ import android.os.Bundle;
 
 import com.esotericsoftware.kryo.Serializer;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,7 @@ public class Paper {
     static final String DEFAULT_DB_NAME = "io.paperdb";
 
     private static Context mContext;
+    private static PaperConfig mConfig;
 
     private static final ConcurrentHashMap<String, Book> mBookMap = new ConcurrentHashMap<>();
     private static final HashMap<Class, Serializer> mCustomSerializers = new HashMap<>();
@@ -44,13 +46,43 @@ public class Paper {
     }
 
     /**
+     * Lightweight method to init Paper instance. Should be executed in {@link Application#onCreate()}
+     * or {@link android.app.Activity#onCreate(Bundle)}.
+     * <p/>
+     *
+     * @param context context, used to get application context
+     * @param config  config, configuration for Paper instance.
+     */
+    public static void init(Context context, PaperConfig config) {
+        mContext = context.getApplicationContext();
+        initializeConfig(config);
+    }
+
+    private static void initializeConfig(PaperConfig config) {
+        mConfig = config;
+        if (mConfig.getStorageLocation() != null) {
+            File file = new File(mConfig.getStorageLocation());
+            if (file.exists() && !file.isDirectory()) {
+                throw new PaperDbException("storageLocation: " + file.getAbsolutePath() + " exists and is not a directory");
+            }
+            //Creating in DbStoragePlainFile so don't need?
+       /*     if (!file.exists()) {
+                if (!file.mkdirs()) {
+                    throw new PaperDbException("failed to create directory listed in storageLocation: " + file.getAbsolutePath());
+                }
+            }*/
+        }
+    }
+
+    /**
      * Returns paper book instance with the given name
      *
      * @param name name of new database
      * @return Paper instance
      */
     public static Book book(String name) {
-        if (name.equals(DEFAULT_DB_NAME)) throw new PaperDbException(DEFAULT_DB_NAME +
+        if (name.equals(DEFAULT_DB_NAME))
+            throw new PaperDbException(DEFAULT_DB_NAME +
                 " name is reserved for default library name");
         return getBook(name);
     }
@@ -123,7 +155,7 @@ public class Paper {
     }
 
     /**
-     *  Sets log level for internal Kryo serializer
+     * Sets log level for internal Kryo serializer
      *
      * @param level one of levels from {@link com.esotericsoftware.minlog.Log }
      */
